@@ -79,6 +79,7 @@ function install_composer_deps() {
         php "vendor/composer/bin/composer.phar" config -g github-oauth.github.com "$COMPOSER_GITHUB_TOKEN" --no-interaction
     fi
 
+    
     status "Installing application dependencies with Composer"
     {
 	local devopt="--no-dev"
@@ -86,6 +87,7 @@ function install_composer_deps() {
 	[ "x$dev" = "xtrue" ] && devopt="--dev"
 
         cd "$target"
+	php "vendor/composer/bin/composer.phar" config http-basic.nova.laravel.com ${NOVA_USERNAME} ${NOVA_PASSWORD}
         php "vendor/composer/bin/composer.phar" install \
             --prefer-dist \
             --optimize-autoloader \
