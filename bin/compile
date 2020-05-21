@@ -336,8 +336,6 @@ if [ "$PHP_BUILDPACK_NO_NODE" != "true" ] ; then
   install_node_deps "$BUILD_DIR"
 fi
 
-# Add support for laravel nova
-composer config http-basic.nova.laravel.com ${NOVA_USERNAME} ${NOVA_PASSWORD}
 install_composer_deps "$BUILD_DIR"
 
 # Detect PHP framework
