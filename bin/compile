@@ -154,6 +154,10 @@ function package_php_fpm_includes() {
   jq --raw-output ".extra.${composer_extra_key}[\"php-fpm-includes\"] // [] | .[]" < "$BUILD_DIR/composer.json"
 }
 
+function package_nginx_http_includes() {
+  jq --raw-output ".extra.${composer_extra_key}[\"nginx-http-includes\"] // [] | .[]" < "$BUILD_DIR/composer.json"
+}
+
 function package_nginx_includes() {
   jq --raw-output ".extra.${composer_extra_key}[\"nginx-includes\"] // [] | .[]" < "$BUILD_DIR/composer.json"
 }
@@ -212,9 +216,10 @@ PHP_INCLUDES="${PHP_INCLUDES:-}"
 PHP_FPM_INCLUDES="${PHP_FPM_INCLUDES:-}"
 PHP_FPM_EXTRA_CONFIG="${PHP_FPM_EXTRA_CONFIG:-}"
 COMPILE_CMD="${COMPILE_CMD:-}"
+NGINX_HTTP_INCLUDES="${NGINX_HTTP_INCLUDES:-}"
 NGINX_INCLUDES="${NGINX_INCLUDES:-}"
 ACCESS_LOG_FORMAT_COMPOSER_JSON="${ACCESS_LOG_FORMAT_COMPOSER_JSON:-}"
-NEWRELIC_VERSION="${NEWRELIC_VERSION:=9.9.0.260}"
+NEWRELIC_VERSION="${NEWRELIC_VERSION:=9.16.0.295}"
 LOG_FILES=( "/app/vendor/nginx/logs/access.log" "/app/vendor/nginx/logs/error.log" "/app/vendor/php/var/log/error.log" )
 
 # Display a warning that Composer version 1.x is End of Life
@@ -240,6 +245,7 @@ if [ -f "$BUILD_DIR/composer.json" ]; then
   PHP_INCLUDES=$(package_php_includes)
   PHP_FPM_INCLUDES=$(package_php_fpm_includes)
   COMPILE_CMD=$(package_compile_cmd)
+  NGINX_HTTP_INCLUDES=$(package_nginx_http_includes)
   NGINX_INCLUDES=$(package_nginx_includes)
   USER_LOG_FILES=$(package_log_files)
   ACCESS_LOG_FORMAT_COMPOSER_JSON=$(package_access_log_format)
@@ -268,6 +274,7 @@ cat > ".profile.d/php.sh" <<SH
 export PATH=/app/bin:${VENDORED_NGINX}/sbin:${VENDORED_PHP}/sbin:${VENDORED_PHP}/bin:/app/vendor/bin:\$PATH
 export APP_BUILD_TIME=$(date +%Y%m%d%H%M%S)
 export LD_LIBRARY_PATH=/app/vendor/libonig:\$LD_LIBRARY_PATH
+[ -d "/app/vendor/libsodium" ] && export LD_LIBRARY_PATH=/app/vendor/libsodium:\$LD_LIBRARY_PATH
 
 # Set APP_ENV to prod by default for Symfony based framework.
 export APP_ENV="\${APP_ENV:-prod}"
@@ -307,6 +314,9 @@ fi
 if [ -f "$BUILD_DIR/composer.json" ] && package_newrelic_enabled; then
     LOG_FILES+=( "/app/vendor/newrelic/daemon.log" "/app/vendor/newrelic/agent.log" )
     install_newrelic "$NEWRELIC_VERSION"
+
+    echo 'export NEW_RELIC_LOG_DAEMON=${NEW_RELIC_LOG_DAEMON:=/app/vendor/newrelic/daemon.log}' >> ".profile.d/php.sh"
+    echo 'export NEW_RELIC_LOG_AGENT=${NEW_RELIC_LOG_AGENT:=/app/vendor/newrelic/agent.log}' >> ".profile.d/php.sh"
 fi
 
 if [ -n "$BLACKFIRE_SERVER_ID" -a -n "$BLACKFIRE_SERVER_TOKEN" ] ; then
@@ -418,6 +428,7 @@ mv /app/vendor/php vendor/php
 [ -d "/app/vendor/libmemcached" ] && mv /app/vendor/libmemcached vendor/libmemcached
 [ -d "/app/vendor/gmp" ] && mv /app/vendor/gmp vendor/gmp
 [ -d "/app/vendor/libtidy" ] && mv /app/vendor/libtidy vendor/libtidy
+[ -d "/app/vendor/libsodium" ] && mv /app/vendor/libsodium vendor/libsodium
 
 mkdir -p "bin" "vendor/bin"
 
@@ -445,14 +456,22 @@ done
 
 export DOCUMENT_ROOT="\${DOCUMENT_ROOT:-$DOCUMENT_ROOT}"
 export INDEX_DOCUMENT="\${INDEX_DOCUMENT:-$INDEX_DOCUMENT}"
+export NGINX_HTTP_INCLUDES="\${NGINX_HTTP_INCLUDES:-$NGINX_HTTP_INCLUDES}"
 export NGINX_INCLUDES="\${NGINX_INCLUDES:-$NGINX_INCLUDES}"
 export ACCESS_LOG_FORMAT_COMPOSER_JSON='$ACCESS_LOG_FORMAT_COMPOSER_JSON'
 export ACCESS_LOG_FORMAT="\${ACCESS_LOG_FORMAT:-\$ACCESS_LOG_FORMAT_COMPOSER_JSON}"
 
-if [ -n "\$NEW_RELIC_LICENSE_KEY" ]; then
-    export NEW_RELIC_LOG_DAEMON=\${NEW_RELIC_LOG_DAEMON:=/app/vendor/newrelic/daemon.log}
-    export NEW_RELIC_LOG_AGENT=\${NEW_RELIC_LOG_AGENT:=/app/vendor/newrelic/agent.log}
-    echo "newrelic.license=\"\$NEW_RELIC_LICENSE_KEY\"" > /app/vendor/php/etc/conf.d/newrelic_license.ini
+if [ -f "/app/vendor/php/etc/conf.d/newrelic.ini" ] ; then
+    if [ -n "\$NEW_RELIC_LICENSE_KEY" ]; then
+        echo "newrelic.license=\"\$NEW_RELIC_LICENSE_KEY\"" > /app/vendor/php/etc/conf.d/newrelic_license.ini
+    else
+        echo " !"
+        echo " ! New Relic agent has been installed but is misconfigured"
+        echo " ! NEW_RELIC_LICENSE_KEY should be define in the application environment"
+        echo " !"
+        echo " ! Documentation: https://doc.scalingo.com/languages/php/start"
+        echo " !"
+    fi
 fi
 
 erb conf/nginx.conf.erb > /app/vendor/nginx/conf/nginx.conf
